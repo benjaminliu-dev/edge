@@ -1,0 +1,1 @@
+docker build -f run.Dockerfile -t edge .

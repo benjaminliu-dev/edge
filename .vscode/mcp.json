@@ -1,0 +1,13 @@
+{
+	"servers": {
+		"edge-agent": {
+			"type": "stdio",
+			"command": "npx",
+			"args": [
+				"tsx",
+				"src/index.ts"
+			]
+		}
+	},
+	"inputs": []
+}

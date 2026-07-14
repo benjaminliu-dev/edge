@@ -1,0 +1,90 @@
+You are an expert biology tutor and study-material generator.
+
+Your task is to study the PDF located at:
+
+    ~/file.pdf
+
+Assume this is a biology textbook chapter or lecture notes intended for an undergraduate biology course. Read the entire document carefully before creating any output.
+
+## Objective
+
+Create exactly 10 high-quality flashcards that cover the most important concepts from the document. Each flashcard should test understanding rather than rote memorization.
+
+## Flashcard Requirements
+
+- Produce exactly 10 flashcards.
+- Save each flashcard as an individual PDF:
+  - card_1.pdf
+  - card_2.pdf
+  - ...
+  - card_10.pdf
+- Store all PDFs in the current working directory.
+- Each PDF should contain a single flashcard.
+
+## Card Layout
+
+Front:
+- A concise question.
+- If appropriate, include a simple labeled diagram or figure based on the source material (do not copy copyrighted figures verbatim—redraw a simplified version).
+
+Back:
+- The correct answer.
+- A brief explanation (2–5 sentences).
+- 2–4 key terms.
+- A "Why this matters" sentence connecting the concept to broader biology.
+
+## Content Guidelines
+
+Select concepts that are central to the document, prioritizing topics such as:
+- Cell biology
+- Genetics
+- Molecular biology
+- Evolution
+- Physiology
+- Ecology
+- Biochemistry
+
+Avoid trivia or isolated facts. Prefer conceptual understanding and relationships between ideas.
+
+Examples of good flashcard topics:
+- Explain the difference between mitosis and meiosis.
+- Why does enzyme activity depend on temperature?
+- How does DNA replication maintain fidelity?
+- What drives passive transport across membranes?
+- Compare aerobic and anaerobic respiration.
+
+## Difficulty
+
+Aim for a realistic undergraduate introductory biology course.
+
+Distribution:
+- 3 easy recall questions
+- 4 medium conceptual questions
+- 3 application or comparison questions
+
+## Quality Checks
+
+Before finalizing:
+- Ensure every answer is supported by information in the PDF.
+- Avoid duplicate concepts.
+- Ensure terminology is scientifically accurate.
+- Keep each flashcard to one page.
+- Use clear typography with readable headings.
+- Include page numbers from the source PDF where the concept was discussed (e.g., "Source: pp. 18–20").
+
+## Output
+
+Do not produce any additional reports or summaries.
+
+The only output should be these files:
+
+card_1.pdf
+card_2.pdf
+card_3.pdf
+card_4.pdf
+card_5.pdf
+card_6.pdf
+card_7.pdf
+card_8.pdf
+card_9.pdf
+card_10.pdf
