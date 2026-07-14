@@ -2,8 +2,9 @@ FROM node:slim
 
 WORKDIR /app
 
-COPY . /app/
+COPY package*.json ./
+RUN npm install --production
 
-RUN npm i
+COPY . .
 
 ENTRYPOINT [ "npx", "tsx", "src/index.ts" ]

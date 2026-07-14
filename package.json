@@ -5,7 +5,9 @@
   "main": "index.js",
   "scripts": {
     "test": "npx jest src/core/agent/agent.test.ts --runInBand --forceExit",
-    "inspect": "npx --yes @modelcontextprotocol/inspector npx ts-node src/index.ts"
+    "inspect": "npx --yes @modelcontextprotocol/inspector npx ts-node src/index.ts",
+    "cli": "npx ts-node src/cli.ts",
+    "cl": "npm run cli"
   },
   "keywords": [],
   "author": "",

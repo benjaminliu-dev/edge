@@ -8,6 +8,8 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 
+// TODO: 
+
 /*
 Prompt Processing Flow
 
@@ -181,6 +183,7 @@ ${this.permissions}
 Project path:
 ${this.projectPath}
 
+To know whether the task is done or not, read the message history for the previous preprocessed result
 
 - Answer the user's prompt using the project context and read cache.
 - Return ONLY valid JSON.
