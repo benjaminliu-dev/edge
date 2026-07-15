@@ -1,5 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import readline from "readline";
 
 const client = new Client({
@@ -7,10 +8,14 @@ const client = new Client({
     version: "1.0.0"
 });
 
-const transport = new StdioClientTransport({
-    command: "npx",
-    args: ["ts-node", "src/index.ts"],
-});
+const directUrl = process.env.SERVER_URL || "http://127.0.0.1:3001/mcp";
+const useStdio = process.env.STDIO_CONNECT === "true";
+const transport = useStdio
+    ? new StdioClientTransport({
+          command: "npx",
+          args: ["ts-node", "src/server.ts"],
+      })
+    : new StreamableHTTPClientTransport(new URL(directUrl));
 
 type Message = { role: "user" | "agent"; text: string };
 

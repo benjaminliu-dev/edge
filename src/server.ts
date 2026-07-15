@@ -1,10 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { Agent } from "./core/agent/agent";
 import { AgentPermissions } from "./core/agent/agent-utils";
-import { text } from "body-parser";
-
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import express from "express";
+import { randomUUID } from "node:crypto";
 
 const server = new McpServer({
     name: "edge-agent",
@@ -79,9 +79,43 @@ server.registerTool("dump-agent-stats", {
 });
 
 async function main() {
-    const transport = new StdioServerTransport();
+    const app = express();
+    app.use(express.json());
+
+    const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+    });
+
+    app.post("/mcp", async (req, res) => {
+        await transport.handleRequest(req, res, req.body);
+    });
+
+    app.get("/mcp", async (req, res) => {
+        await transport.handleRequest(req, res);
+    });
+
+    app.post("/sse", async (req, res) => {
+        await transport.handleRequest(req, res, req.body);
+    });
+
+    app.get("/sse", async (req, res) => {
+        await transport.handleRequest(req, res);
+    });
+
+    const port = process.env.PORT ? Number(process.env.PORT) : 3001;
+    const serverInstance = app.listen(port, "127.0.0.1", () => {
+        const address = serverInstance.address();
+        console.error(`Edge Agent MCP Server listening on http://127.0.0.1:${port}/mcp and http://127.0.0.1:${port}/sse`);
+        console.error(`Server address: ${JSON.stringify(address)}`);
+    });
+    serverInstance.on("error", (error) => {
+        console.error("Edge Agent MCP Server failed to bind port:", error);
+        process.exit(1);
+    });
+
     await server.connect(transport);
-    console.error("Edge Agent MCP Server running on stdio");
+
+    console.error("Edge Agent MCP transport connected");
 }
 
 main().catch((error) => {

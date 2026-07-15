@@ -5,9 +5,10 @@
   "main": "index.js",
   "scripts": {
     "test": "npx jest src/core/agent/agent.test.ts --runInBand --forceExit",
-    "inspect": "npx --yes @modelcontextprotocol/inspector npx ts-node src/index.ts",
+    "inspect": "SERVER_PORT=6278 npx --yes @modelcontextprotocol/inspector npx ts-node src/server.ts",
+    "inspect:default": "npx --yes @modelcontextprotocol/inspector npx ts-node src/server.ts",
     "cli": "npx ts-node src/cli.ts",
-    "cl": "npm run cli"
+    "cli:direct": "DIRECT_CONNECT=true SERVER_URL=http://127.0.0.1:3001/mcp npx ts-node src/cli.ts"
   },
   "keywords": [],
   "author": "",
@@ -16,12 +17,13 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@types/body-parser": "^1.19.6",
-    "@types/express": "^5.0.6",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "ollama": "^0.6.3",
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/jest": "^30.0.0",
     "@types/node": "^26.1.1",
     "jest": "^30.4.2",
