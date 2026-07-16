@@ -2,9 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { Agent } from "./core/agent/agent";
 import { AgentPermissions } from "./core/agent/agent-utils";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import express from "express";
-import { randomUUID } from "node:crypto";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 const server = new McpServer({
     name: "edge-agent",
@@ -39,12 +37,14 @@ server.registerTool("prompt", {
             content: [
                 {
                     type: "text",
-                    text: "Preprocessing error"
+                    text: "Preprocessing/Response error"
                 }
             ]
         };
     }
 
+
+    default_agent.totalTokens += (itokens + otokens);
 
     return {
         content: [
@@ -67,7 +67,7 @@ server.registerTool("prompt", {
 server.registerTool("dump-agent-stats", {
     description: "Dump all agent data",
     inputSchema: {}
-}, async ({}) => {
+}, async ({ }) => {
     return {
         content: [
             {
@@ -78,44 +78,25 @@ server.registerTool("dump-agent-stats", {
     };
 });
 
+server.registerTool("token-data", {
+    description: "Dump token data",
+    inputSchema: {}
+}, async ({ }) => {
+    return {
+        content: [
+            {
+                type: "text",
+                text: default_agent.totalTokens.toString()
+            }
+        ]
+    }
+});
+
 async function main() {
-    const app = express();
-    app.use(express.json());
-
-    const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID(),
-    });
-
-    app.post("/mcp", async (req, res) => {
-        await transport.handleRequest(req, res, req.body);
-    });
-
-    app.get("/mcp", async (req, res) => {
-        await transport.handleRequest(req, res);
-    });
-
-    app.post("/sse", async (req, res) => {
-        await transport.handleRequest(req, res, req.body);
-    });
-
-    app.get("/sse", async (req, res) => {
-        await transport.handleRequest(req, res);
-    });
-
-    const port = process.env.PORT ? Number(process.env.PORT) : 3001;
-    const serverInstance = app.listen(port, "127.0.0.1", () => {
-        const address = serverInstance.address();
-        console.error(`Edge Agent MCP Server listening on http://127.0.0.1:${port}/mcp and http://127.0.0.1:${port}/sse`);
-        console.error(`Server address: ${JSON.stringify(address)}`);
-    });
-    serverInstance.on("error", (error) => {
-        console.error("Edge Agent MCP Server failed to bind port:", error);
-        process.exit(1);
-    });
+    const transport = new StdioServerTransport();
 
     await server.connect(transport);
-
-    console.error("Edge Agent MCP transport connected");
+    console.error("Edge Agent MCP stdio transport connected");
 }
 
 main().catch((error) => {
