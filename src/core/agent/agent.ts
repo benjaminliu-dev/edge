@@ -29,6 +29,7 @@ export class Agent {
     private readCache: Map<string, string>;
     public totalTokens: number;
     private projectPath: string;
+    private counter: number;
 
     constructor(model: string, agentContext: string, permissions: AgentPermissions, projectPath: string) {
         this.ollamaHost = process.env.OLLAMA_HOST || process.env.OLLAMA_URL || process.env.OLLAMA_API_URL || '';
@@ -39,6 +40,7 @@ export class Agent {
         this.messageHistory = [];
         this.readCache = new Map();
         this.totalTokens = 0;
+        this.counter = 0;
         this.projectPath = projectPath;
     }
 
@@ -287,7 +289,11 @@ Include every read, write, and execute operation you performed, explain why, and
 
 
         this.messageHistory.push(`AI Response Object: ${JSON.stringify(response)}`);
-
+        this.counter += 1;
+        if (this.counter > 15) {
+            this.readCache = new Map<string, string>;
+            this.messageHistory = [];
+        }
         return [parsed_result, response.prompt_eval_count, response.eval_count];
     }
 }
