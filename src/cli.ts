@@ -27,12 +27,31 @@ async function sendPrompt(text: string) {
 
         const textBlocks = Array.isArray(result?.content)
             ? result.content
-                  .filter((block: any) => block.type === "text" && typeof block.text === "string")
-                  .map((block: any) => block.text)
+                .filter((block: any) => block.type === "text" && typeof block.text === "string")
+                .map((block: any) => block.text)
             : [];
 
         const responseText = textBlocks.length > 0 ? textBlocks[0] : "(no response)";
         return responseText;
+    } catch (error) {
+        return `Error: ${String(error)}`;
+    }
+}
+
+async function getTokenData() {
+    try {
+        const result = await client.callTool({
+            name: "token-data",
+            arguments: {}
+        });
+
+        const textBlocks = Array.isArray(result?.content)
+            ? result.content
+                .filter((block: any) => block.type === "text" && typeof block.text === "string")
+                .map((block: any) => block.text)
+            : [];
+
+        return textBlocks.length > 0 ? textBlocks[0] : "(no response)";
     } catch (error) {
         return `Error: ${String(error)}`;
     }
@@ -60,9 +79,11 @@ async function main() {
             rl.close();
             return;
         }
-        
+
         if (trimmed === "/tokens") {
-            
+            console.log(`${GREEN_BOLD}Agent> ${await getTokenData()}${RESET}`);
+            rl.prompt()
+            return;
         }
 
         const responseText = await sendPrompt(trimmed);

@@ -21,6 +21,7 @@ Execution: Executes the necessary file operations (read/write) based on the prep
 
 export class Agent {
     private ollama: Ollama;
+    private readonly ollamaHost: string;
     private model: string;
     private agentContext: string
     private permissions: AgentPermissions;
@@ -30,7 +31,8 @@ export class Agent {
     private projectPath: string;
 
     constructor(model: string, agentContext: string, permissions: AgentPermissions, projectPath: string) {
-        this.ollama = new Ollama();
+        this.ollamaHost = process.env.OLLAMA_HOST || process.env.OLLAMA_URL || process.env.OLLAMA_API_URL || '';
+        this.ollama = new Ollama(this.ollamaHost ? { host: this.ollamaHost } : undefined);
         this.model = model;
         this.agentContext = agentContext;
         this.permissions = permissions;
@@ -149,7 +151,12 @@ ${prompt},
             const parsed_result: PreprocessResult = JSON.parse(extractJson(response.response)!);
             return [parsed_result, response.prompt_eval_count, response.eval_count];
         } catch (error) {
-            console.error("Error preprocessing prompt:", error); // Preprocessing errors do not panic, instead it is handled by the prompt() function does
+            const message = error instanceof Error ? error.message : String(error);
+            console.error("Error preprocessing prompt:", error);
+            console.error(`Ollama host: ${this.ollamaHost || 'default http://127.0.0.1:11434'}`);
+            if (message.includes('ECONNREFUSED')) {
+                console.error('Ollama server connection refused. Ensure the Ollama daemon is running and reachable.');
+            }
         }
 
         return [null, null, null];
@@ -162,8 +169,9 @@ ${prompt},
             return [null, null, null];
         }
 
-        if (!ptokens || !otokens) {
-            throw new Error("Token processing failure")
+        if (ptokens === null || otokens === null) {
+            console.error("Token processing failure: missing token counts from preprocessing");
+            return [null, null, null];
         }
 
         let tree = ``;
