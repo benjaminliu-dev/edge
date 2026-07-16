@@ -7,4 +7,4 @@ RUN npm install --production
 RUN apt update && apt install tree
 COPY . .
 
-ENTRYPOINT [ "npx", "tsx", "src/server.ts" ]
+ENTRYPOINT [ "npx", "ts-node", "src/server.ts" ]
