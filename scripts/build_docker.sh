@@ -1,1 +1,1 @@
-container build -f run.Dockerfile -t edge .
+docker build -f run.Dockerfile -t edge .

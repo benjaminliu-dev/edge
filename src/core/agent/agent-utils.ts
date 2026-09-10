@@ -34,3 +34,4 @@ export interface PromptResult {
 export function extractJson(raw: string): string {
   return raw.replace(/^```json\s*|```\s*$/g, "").trim();
 }
+

@@ -3,6 +3,8 @@ import { z } from "zod";
 import { Agent } from "./core/agent/agent";
 import { AgentPermissions } from "./core/agent/agent-utils";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import dotenv from "dotenv";
+dotenv.config({ path: 'config.env' });
 
 const server = new McpServer({
     name: "edge-agent",
@@ -18,7 +20,9 @@ let agentPermissions: AgentPermissions = {
     excludePaths: []
 };
 
-let default_agent = new Agent("gemma4:cloud", "You are an AI study agent.", agentPermissions, "~/code/edge");
+
+
+let default_agent = new Agent(process.env.MODEL || "gemma4:cloud", "You are an AI study agent.", agentPermissions, process.env.PROJECT_PATH || "~/code/edge");
 
 
 server.registerTool("prompt", {
@@ -42,9 +46,6 @@ server.registerTool("prompt", {
             ]
         };
     }
-
-
-    default_agent.totalTokens += (itokens + otokens);
 
     return {
         content: [

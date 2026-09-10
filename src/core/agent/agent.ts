@@ -1,10 +1,8 @@
 import { Ollama } from "ollama";
 import { AgentPermissions, extractJson, PreprocessResult, PromptResult } from "./agent-utils";
-import { response } from "express";
-import { readFile } from 'fs/promises';
-import { writeFile } from "fs/promises";
-import { exec } from "child_process"
 import * as fs from 'fs/promises';
+import { readPdfFile } from '../pdf-reader';
+import { execSync } from "child_process";
 import * as os from 'os';
 import * as path from 'path';
 
@@ -58,21 +56,31 @@ export class Agent {
 
     private resolveReadPath(requestPath: string): string {
         const expandHome = (p: string) => p.startsWith('~') ? path.join(os.homedir(), p.slice(1)) : p;
-        const normalizedProjectPath = expandHome(this.projectPath);
+        const normalizedProjectPath = path.normalize(expandHome(this.projectPath));
         const normalizedRequestPath = expandHome(requestPath);
-        return path.isAbsolute(normalizedRequestPath)
-            ? normalizedRequestPath
+        const resolvedPath = path.isAbsolute(normalizedRequestPath)
+            ? path.normalize(normalizedRequestPath)
             : path.resolve(normalizedProjectPath, normalizedRequestPath);
+            
+        if (!resolvedPath.startsWith(normalizedProjectPath)) {
+            throw new Error(`Access denied: Path ${resolvedPath} is outside project path ${normalizedProjectPath}`);
+        }
+        return resolvedPath;
     }
 
     public async preProcessPrompt(prompt: string): Promise<[PreprocessResult | null, number | null, number | null]> {
         try {
 
             let tree = ``;
-
-            exec("tree", (error, stdout, stderr) => {
-                tree = stdout;
-            })
+            try {
+                const expandHome = (p: string) => p.startsWith('~') ? path.join(os.homedir(), p.slice(1)) : p;
+                const cwd = expandHome(this.projectPath);
+                tree = execSync("tree -I 'node_modules|.git'", { encoding: 'utf-8', cwd });
+            } catch (e) {
+                tree = "Tree not available.";
+            }
+            
+            const formattedHistory = this.messageHistory.map(msg => typeof msg === 'string' ? msg : JSON.stringify(msg)).join('\\n');
 
             const response = await this.ollama.generate({
                 model: this.model,
@@ -90,7 +98,7 @@ File structure:
 ${tree}
 
 Messages history:
-${this.messageHistory}
+${formattedHistory}
 
 Read Cache:
 ${JSON.stringify(Object.fromEntries(this.readCache), null, 2)}
@@ -177,11 +185,13 @@ ${prompt},
         }
 
         let tree = ``;
-
-        exec("tree", (error, stdout, stderr) => {
-            tree = stdout;
-        })
-
+        try {
+            const expandHome = (p: string) => p.startsWith('~') ? path.join(os.homedir(), p.slice(1)) : p;
+            const cwd = expandHome(this.projectPath);
+            tree = execSync("tree -I 'node_modules|.git'", { encoding: 'utf-8', cwd });
+        } catch (e) {
+            tree = "Tree not available.";
+        }
 
         this.messageHistory.push(`User prompt: ${prompt}`, `Your preprocessed result: ${JSON.stringify(result)}`);
 
@@ -192,7 +202,14 @@ ${prompt},
         for (let readPath of result.readPaths) {
             try {
                 const resolvedPath = this.resolveReadPath(readPath);
-                let readResult: string = await readFile(resolvedPath, 'utf-8');
+                let readResult: string;
+
+                if (readPath.toLowerCase().endsWith('.pdf')) {
+                    readResult = await readPdfFile(resolvedPath);
+                } else {
+                    readResult = await fs.readFile(resolvedPath, 'utf-8');
+                }
+
                 this.readCache.set(readPath, readResult);
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
@@ -200,6 +217,8 @@ ${prompt},
                 this.readCache.set(readPath, `Read Failure: ${message}`);
             }
         }
+
+        const formattedHistory = this.messageHistory.map(msg => typeof msg === 'string' ? msg : JSON.stringify(msg)).join('\n');
 
         const response = await this.ollama.generate({
             model: this.model,
@@ -216,7 +235,7 @@ File structure:
 ${tree}
 
 Messages history:
-${this.messageHistory}
+${formattedHistory}
 
 Read Cache:
 ${JSON.stringify(Object.fromEntries(this.readCache), null, 2)}
@@ -263,28 +282,41 @@ Include every read, write, and execute operation you performed, explain why, and
         let parsed_result: PromptResult;
 
         try {
-            parsed_result = JSON.parse(response.response!);
+            parsed_result = JSON.parse(extractJson(response.response!));
         } catch (err) {
             return [null, response.prompt_eval_count, response.eval_count]
         }
 
-        for (let operation of parsed_result.writeOperations) {
-            try {
-                // recursively create everything needed
-                const dirPath = path.dirname(operation.path);
-                await fs.mkdir(dirPath, { recursive: true });
-                await fs.writeFile(operation.path, operation.content, 'utf-8');
+        if (this.permissions.writeFiles) {
+            for (let operation of parsed_result.writeOperations || []) {
+                try {
+                    const resolvedPath = this.resolveReadPath(operation.path);
+                    const dirPath = path.dirname(resolvedPath);
+                    await fs.mkdir(dirPath, { recursive: true });
+                    await fs.writeFile(resolvedPath, operation.content, 'utf-8');
 
-                this.messageHistory.push(`Write operation done: Path ${operation.path}, Content: ${operation.content}`);
-            } catch (error) {
-                this.messageHistory.push(`Write operation for ${operation.path} failed: ${error instanceof Error ? error.message : String(error)}`);
+                    this.messageHistory.push(`Write operation done: Path ${resolvedPath}, Content: ${operation.content}`);
+                } catch (error) {
+                    this.messageHistory.push(`Write operation for ${operation.path} failed: ${error instanceof Error ? error.message : String(error)}`);
+                }
             }
+        } else {
+            this.messageHistory.push(`Write operations skipped: writeFiles permission denied.`);
         }
 
-        for (let operation of parsed_result.executeOperations) {
-            exec(operation.command, (error, stdout, stderr) => {
-                this.messageHistory.push(`Executed operation: Command: ${operation.command} Reason: ${operation.reason} Error: ${error}, Stdout: ${stdout}, Stderr: ${stderr}`);
-            });
+        if (this.permissions.executeCommands) {
+            for (let operation of parsed_result.executeOperations || []) {
+                try {
+                    const expandHome = (p: string) => p.startsWith('~') ? path.join(os.homedir(), p.slice(1)) : p;
+                    const cwd = expandHome(this.projectPath);
+                    const stdout = execSync(operation.command, { encoding: 'utf-8', cwd });
+                    this.messageHistory.push(`Executed operation: Command: ${operation.command} Reason: ${operation.reason}, Stdout: ${stdout}`);
+                } catch (error) {
+                    this.messageHistory.push(`Execution failed: Command: ${operation.command} Error: ${error instanceof Error ? error.message : String(error)}`);
+                }
+            }
+        } else {
+            this.messageHistory.push(`Execute operations skipped: executeCommands permission denied.`);
         }
 
 
