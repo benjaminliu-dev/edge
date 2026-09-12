@@ -12,6 +12,7 @@ const mockGetServerVersion = jest.fn();
 const mockGetInstructions = jest.fn();
 const mockCallTool = jest.fn();
 const mockTransportConstructor = jest.fn();
+const mockStreamableTransportConstructor = jest.fn();
 
 jest.mock('ollama', () => ({
     Ollama: jest.fn().mockImplementation(() => ({
@@ -19,7 +20,7 @@ jest.mock('ollama', () => ({
     })),
 }));
 
-jest.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
+jest.mock('@modelcontextprotocol/client', () => ({
     Client: jest.fn().mockImplementation(() => ({
         connect: mockConnect,
         listTools: mockListTools,
@@ -27,9 +28,13 @@ jest.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
         getInstructions: mockGetInstructions,
         callTool: mockCallTool,
     })),
+    StreamableHTTPClientTransport: jest.fn().mockImplementation((url, opts) => {
+        mockStreamableTransportConstructor(url, opts);
+        return { url, opts };
+    }),
 }));
 
-jest.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({
+jest.mock('@modelcontextprotocol/client/stdio', () => ({
     StdioClientTransport: jest.fn().mockImplementation((config) => {
         mockTransportConstructor(config);
         return { config };
@@ -89,6 +94,7 @@ beforeEach(() => {
     mockGetInstructions.mockReset();
     mockCallTool.mockReset();
     mockTransportConstructor.mockReset();
+    mockStreamableTransportConstructor.mockReset();
 
     mockConnect.mockResolvedValue(undefined);
     mockListTools.mockResolvedValue({ tools: [] });
@@ -128,6 +134,28 @@ describe("prompt loop", () => {
 });
 
 describe("MCP initialization", () => {
+    it('initializes configured streamable HTTP MCP servers with the streamable HTTP client transport', async () => {
+        mockListTools.mockResolvedValueOnce({
+            tools: [
+                {
+                    name: "echo_message",
+                    description: "Echo a message",
+                    inputSchema: { type: "object" },
+                },
+            ],
+        });
+
+        const agent = new Agent("test-model", "test context", basePermissions, "/tmp", [
+            { type: "streamable-http", url: "http://localhost:8080/mcp" },
+        ]);
+
+        await agent.initializeMCPServers();
+
+        expect(mockStreamableTransportConstructor).toHaveBeenCalled();
+        expect(mockConnect).toHaveBeenCalledTimes(1);
+        expect(agent.toJSON().mcpReady).toBe(true);
+    });
+
     it('initializes configured MCP servers and stores their tools', async () => {
         mockListTools.mockResolvedValueOnce({
             tools: [

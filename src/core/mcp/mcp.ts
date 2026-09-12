@@ -2,8 +2,10 @@ export interface MCPServer {
     name: string,
     version: string,
     instructions: string | null,
-    command: string,
-    args: any[],
+    command?: string,
+    args?: any[],
+    url?: string,
+    type?: "stdio" | "streamable-http",
     tools: MCPTool[],
 }
 
@@ -14,6 +16,8 @@ export interface MCPTool {
 }
 
 export interface MCPConfig {
-    command: string, 
-    args: any[]
+    type?: "stdio" | "streamable-http",
+    command?: string,
+    args?: any[],
+    url?: string,
 }

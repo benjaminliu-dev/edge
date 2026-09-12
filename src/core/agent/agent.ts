@@ -5,8 +5,8 @@ import { readPdfFile } from '../pdf-reader';
 import { execSync } from "child_process";
 import * as os from 'os';
 import * as path from 'path';
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { MCPConfig, MCPServer } from "../mcp/mcp";
 
 // TODO: 
@@ -79,7 +79,7 @@ export class Agent {
 
         for (const config of this.mcpServerConfigs) {
             try {
-                const transport = new StdioClientTransport(config);
+                const transport = this.createTransport(config);
                 const client = new Client({ name: "edge-agent", version: "1.0.0" });
                 await client.connect(transport as any);
 
@@ -88,7 +88,7 @@ export class Agent {
                 const version = await client.getServerVersion();
 
                 const server: MCPServer = {
-                    name: version?.name || config.command || "mcp-server",
+                    name: version?.name || config.command || config.url || "mcp-server",
                     version: version?.version || "1.0.0",
                     instructions: instructions || null,
                     command: config.command,
@@ -111,6 +111,19 @@ export class Agent {
         }
 
         this.mcpReady = this.mcpServers.length > 0;
+    }
+
+    private createTransport(config: MCPConfig): any {
+        const transportType = config.type || "stdio";
+
+        if (transportType === "streamable-http") {
+            return new StreamableHTTPClientTransport(new URL(config.url || "http://127.0.0.1:8000/mcp"));
+        }
+
+        return new StdioClientTransport({
+            command: config.command || "",
+            args: config.args || [],
+        } as any);
     }
 
     private extractToolText(result: any): string {

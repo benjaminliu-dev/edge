@@ -1,8 +1,15 @@
 [
-    {
-        "command": "/Users/benjaminliu/venv/bin/python",
-        "args": [
-            "/Users/benjaminliu/code/dummy-mcp-server/main.py"
-        ]
-    }
+  {
+    "type": "stdio",
+    "command": "/Users/benjaminliu/venv/bin/python",
+    "args": [
+      "/Users/benjaminliu/code/dummy-mcp-server/main.py"
+    ]
+  },
+  
+  {
+    "type": "streamable-http",
+    "url": "http://0.0.0.0:8080/mcp"
+  }
+
 ]
