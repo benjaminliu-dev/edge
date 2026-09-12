@@ -6,6 +6,7 @@ export interface AgentPermissions {
     deleteFiles: boolean;
     executeCommands: boolean;
     excludePaths: string[];
+    useMCPTools: boolean;
 }
 
 export interface PreprocessResult {
@@ -20,7 +21,7 @@ export interface PreprocessResult {
 }
 
 export interface PromptResult {
-    response: string, 
+    response: string,
     writeOperations: {
         path: string,
         content: string,
@@ -28,10 +29,21 @@ export interface PromptResult {
     executeOperations: {
         command: string,
         reason: string
+    }[],
+    mcpOperations?: {
+        server?: string,
+        tool: string,
+        arguments: Record<string, unknown>,
+        reason: string
     }[]
+}
+
+export interface TaskEvaluationResult {
+    task_done: boolean;
+    missing_requirements: string[];
+    next_prompt: string;
 }
 
 export function extractJson(raw: string): string {
   return raw.replace(/^```json\s*|```\s*$/g, "").trim();
 }
-

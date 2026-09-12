@@ -1,0 +1,8 @@
+[
+    {
+        "command": "/Users/benjaminliu/venv/bin/python",
+        "args": [
+            "/Users/benjaminliu/code/dummy-mcp-server/main.py"
+        ]
+    }
+]

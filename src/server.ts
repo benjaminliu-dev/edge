@@ -4,7 +4,12 @@ import { Agent } from "./core/agent/agent";
 import { AgentPermissions } from "./core/agent/agent-utils";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import dotenv from "dotenv";
-dotenv.config({ path: 'config.env' });
+import { MCPConfig } from "./core/mcp/mcp";
+import { expandHomePath, readJsonFile } from "./core/config";
+
+const args: string[] = process.argv.slice(2);
+
+dotenv.config({ path: expandHomePath(args[0] || "config/config.env") });
 
 const server = new McpServer({
     name: "edge-agent",
@@ -17,12 +22,36 @@ let agentPermissions: AgentPermissions = {
     createFiles: true,
     deleteFiles: true,
     executeCommands: false,
-    excludePaths: []
+    excludePaths: [],
+    useMCPTools: false,
 };
 
+let mcpServerConfigs: MCPConfig[] = [];
 
 
-let default_agent = new Agent(process.env.MODEL || "gemma4:cloud", "You are an AI study agent.", agentPermissions, process.env.PROJECT_PATH || "~/code/edge");
+try {
+    agentPermissions = readJsonFile<AgentPermissions>(process.env.PERMISSIONS_PATH as string);
+} catch (error) {
+    console.error(`Failed to read permissions file. Defaulting to the permissions ${JSON.stringify(agentPermissions)}. Error: ${error}`)
+}
+
+if (agentPermissions.useMCPTools) {
+    try {
+        mcpServerConfigs = readJsonFile<MCPConfig[]>(process.env.MCP_CONFIG_PATH as string);
+    } catch (error) {
+        console.error(`Failed to read MCP config. Defaulting to no MCP servers. Error: ${error}`);
+    }
+}
+
+
+
+let agent = new Agent(
+    process.env.MODEL || "gemma4:cloud",
+    "You are an AI study agent.",
+    agentPermissions,
+    process.env.PROJECT_PATH || "~/",
+    mcpServerConfigs
+);
 
 
 server.registerTool("prompt", {
@@ -34,7 +63,7 @@ server.registerTool("prompt", {
     }
 }, async ({ prompt }) => {
 
-    let [response, itokens, otokens] = await default_agent.prompt(prompt);
+    let [response, itokens, otokens] = await agent.prompt(prompt);
 
     if (!response || !itokens || !otokens) {
         return {
@@ -73,7 +102,7 @@ server.registerTool("dump-agent-stats", {
         content: [
             {
                 type: "text",
-                text: JSON.stringify(default_agent.toJSON())
+                text: JSON.stringify(agent.toJSON())
             }
         ]
     };
@@ -87,7 +116,7 @@ server.registerTool("token-data", {
         content: [
             {
                 type: "text",
-                text: default_agent.totalTokens.toString()
+                text: agent.totalTokens.toString()
             }
         ]
     }

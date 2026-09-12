@@ -1,0 +1,9 @@
+{
+    "readFiles": true,
+    "writeFiles": true,
+    "createFiles": true,
+    "deleteFiles": false,
+    "executeCommands": false,
+    "excludePaths": [],
+    "useMCPTools": true
+}

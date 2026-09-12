@@ -5,6 +5,9 @@ import { readPdfFile } from '../pdf-reader';
 import { execSync } from "child_process";
 import * as os from 'os';
 import * as path from 'path';
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { MCPConfig, MCPServer } from "../mcp/mcp";
 
 // TODO: 
 
@@ -28,8 +31,13 @@ export class Agent {
     public totalTokens: number;
     private projectPath: string;
     private counter: number;
+    private mcpServers: MCPServer[];
+    private mcpClients: Map<string, Client>;
+    public mcpReady: boolean;
+    public mcpInitializationAttempted: boolean;
+    private readonly mcpServerConfigs: MCPConfig[];
 
-    constructor(model: string, agentContext: string, permissions: AgentPermissions, projectPath: string) {
+    constructor(model: string, agentContext: string, permissions: AgentPermissions, projectPath: string, mcpServerConfigs: MCPConfig[] = []) {
         this.ollamaHost = process.env.OLLAMA_HOST || process.env.OLLAMA_URL || process.env.OLLAMA_API_URL || '';
         this.ollama = new Ollama(this.ollamaHost ? { host: this.ollamaHost } : undefined);
         this.model = model;
@@ -40,6 +48,11 @@ export class Agent {
         this.totalTokens = 0;
         this.counter = 0;
         this.projectPath = projectPath;
+        this.mcpServerConfigs = mcpServerConfigs;
+        this.mcpServers = [];
+        this.mcpClients = new Map();
+        this.mcpReady = false;
+        this.mcpInitializationAttempted = false;
     }
 
     public toJSON() {
@@ -50,8 +63,151 @@ export class Agent {
             messageHistory: this.messageHistory,
             readCache: Object.fromEntries(this.readCache),
             totalTokens: this.totalTokens,
-            projectPath: this.projectPath
+            projectPath: this.projectPath,
+            mcpReady: this.mcpReady,
+            mcpInitializationAttempted: this.mcpInitializationAttempted,
+            mcpServers: this.mcpServers,
         };
+    }
+
+    public async initializeMCPServers(): Promise<void> {
+        if (this.mcpReady || this.mcpInitializationAttempted) {
+            return;
+        }
+
+        this.mcpInitializationAttempted = true;
+
+        for (const config of this.mcpServerConfigs) {
+            try {
+                const transport = new StdioClientTransport(config);
+                const client = new Client({ name: "edge-agent", version: "1.0.0" });
+                await client.connect(transport as any);
+
+                const tools = await client.listTools();
+                const instructions = await client.getInstructions();
+                const version = await client.getServerVersion();
+
+                const server: MCPServer = {
+                    name: version?.name || config.command || "mcp-server",
+                    version: version?.version || "1.0.0",
+                    instructions: instructions || null,
+                    command: config.command,
+                    args: config.args,
+                    tools: (tools?.tools || []).map((tool: any) => ({
+                        method: tool.name,
+                        description: tool.description,
+                        inputSchema: tool.inputSchema || {},
+                    })),
+                };
+
+                this.mcpServers.push(server);
+                this.mcpClients.set(server.name, client);
+                this.messageHistory.push(`MCP initialization done: ${server.name}`);
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                this.messageHistory.push(`MCP initialization failed: ${message}`);
+                console.error("MCP initialization failed:", error);
+            }
+        }
+
+        this.mcpReady = this.mcpServers.length > 0;
+    }
+
+    private extractToolText(result: any): string {
+        if (Array.isArray(result?.content)) {
+            const textBlocks = result.content
+                .filter((block: any) => block?.type === "text" && typeof block.text === "string")
+                .map((block: any) => block.text);
+            if (textBlocks.length > 0) {
+                return textBlocks.join("\n");
+            }
+        }
+
+        if (typeof result?.content === "string") {
+            return result.content;
+        }
+
+        if (typeof result?.structuredContent === "string") {
+            return result.structuredContent;
+        }
+
+        if (result && typeof result === "object") {
+            return JSON.stringify(result);
+        }
+
+        return "";
+    }
+
+    private normalizeToolArguments(serverName: string, toolName: string, argumentsMap: Record<string, unknown> = {}): Record<string, unknown> {
+        const server = this.mcpServers.find((entry) => entry.name === serverName);
+        const toolSchema = server?.tools.find((entry) => entry.method === toolName)?.inputSchema as any;
+
+        if (!toolSchema || typeof toolSchema !== "object") {
+            return argumentsMap;
+        }
+
+        const properties = toolSchema.properties && typeof toolSchema.properties === "object"
+            ? toolSchema.properties as Record<string, unknown>
+            : {};
+
+        const propertyNames = Object.keys(properties);
+        if (propertyNames.length === 1) {
+            const canonicalName = propertyNames[0];
+            const canonicalValue = argumentsMap[canonicalName] ?? Object.values(argumentsMap)[0];
+            if (canonicalValue !== undefined && !(canonicalName in argumentsMap)) {
+                return { [canonicalName]: canonicalValue };
+            }
+        }
+
+        return argumentsMap;
+    }
+
+    private async executeMCPOperations(operations: NonNullable<PromptResult["mcpOperations"]> = []): Promise<string[]> {
+        if (!this.permissions.useMCPTools) {
+            this.messageHistory.push("MCP operations skipped: useMCPTools permission denied.");
+            return [];
+        }
+
+        await this.initializeMCPServers();
+        if (!this.mcpReady) {
+            this.messageHistory.push("MCP operations skipped: no MCP server initialized.");
+            return [];
+        }
+
+        const toolOutputs: string[] = [];
+
+        for (const op of operations) {
+            try {
+                const serverName = op.server || this.mcpServers[0]?.name;
+                const client = serverName ? this.mcpClients.get(serverName) : undefined;
+                if (!client) {
+                    this.messageHistory.push(`MCP operation failed: Tool ${op.tool} not found on ${serverName || 'default server'}`);
+                    continue;
+                }
+
+                const normalizedArgs = this.normalizeToolArguments(serverName, op.tool, op.arguments || {});
+
+                const result = await client.callTool({
+                    name: op.tool,
+                    arguments: normalizedArgs,
+                } as any);
+
+                const text = this.extractToolText(result);
+                if (text) {
+                    toolOutputs.push(text);
+                }
+
+                this.messageHistory.push(`MCP operation done: Tool ${op.tool}`);
+                if (text) {
+                    this.messageHistory.push(`MCP operation result: Tool ${op.tool} Output: ${text}`);
+                }
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                this.messageHistory.push(`MCP operation failed: Tool ${op.tool} Error: ${message}`);
+            }
+        }
+
+        return toolOutputs;
     }
 
     private resolveReadPath(requestPath: string): string {
@@ -199,7 +355,7 @@ ${prompt},
 
         // read files listed in result into the read cache
 
-        for (let readPath of result.readPaths) {
+        for (const readPath of result.readPaths) {
             try {
                 const resolvedPath = this.resolveReadPath(readPath);
                 let readResult: string;
@@ -256,7 +412,7 @@ To know whether the task is done or not, read the message history for the previo
 - Do not wrap the JSON in markdown.
 - Do not include any explanations.
 
-Response guidelines: 
+Response guidelines:
 
 Include every read, write, and execute operation you performed, explain why, and answer the user's question clearly
 
@@ -273,8 +429,18 @@ Include every read, write, and execute operation you performed, explain why, and
             "command": "the command that you need to execute, cannot be a read/write operation, as that is handled in readPaths and writePaths",
             "reason": "why you this command needs to be executed"
         }
+    ],
+    "mcpOperations": [
+        {
+            "server": "optional server name",
+            "tool": "tool name",
+            "arguments": { "query": "value" },
+            "reason": "why this tool needs to be executed"
+        }
     ]
 }
+
+AT THE END OF YOUR RESPONSE MAKE SURE TO ASK A FOLLOW UP QUESTION
 `,
             stream: false
         });
@@ -288,7 +454,7 @@ Include every read, write, and execute operation you performed, explain why, and
         }
 
         if (this.permissions.writeFiles) {
-            for (let operation of parsed_result.writeOperations || []) {
+            for (const operation of parsed_result.writeOperations || []) {
                 try {
                     const resolvedPath = this.resolveReadPath(operation.path);
                     const dirPath = path.dirname(resolvedPath);
@@ -305,7 +471,7 @@ Include every read, write, and execute operation you performed, explain why, and
         }
 
         if (this.permissions.executeCommands) {
-            for (let operation of parsed_result.executeOperations || []) {
+            for (const operation of parsed_result.executeOperations || []) {
                 try {
                     const expandHome = (p: string) => p.startsWith('~') ? path.join(os.homedir(), p.slice(1)) : p;
                     const cwd = expandHome(this.projectPath);
@@ -319,11 +485,19 @@ Include every read, write, and execute operation you performed, explain why, and
             this.messageHistory.push(`Execute operations skipped: executeCommands permission denied.`);
         }
 
+        if (this.permissions.useMCPTools) {
+            const toolOutputs = await this.executeMCPOperations(parsed_result.mcpOperations || []);
+            if (toolOutputs.length > 0) {
+                parsed_result.response = `${parsed_result.response}\n\nMCP tool output:\n${toolOutputs.join("\n")}`;
+            }
+        } else {
+            this.messageHistory.push("MCP operations skipped: useMCPTools permission denied.");
+        }
 
         this.messageHistory.push(`AI Response Object: ${JSON.stringify(response)}`);
         this.counter += 1;
         if (this.counter > 15) {
-            this.readCache = new Map<string, string>;
+            this.readCache = new Map<string, string>();
             this.messageHistory = [];
         }
         return [parsed_result, response.prompt_eval_count, response.eval_count];
